@@ -99,9 +99,8 @@ client.on("messageCreate", async (message) => {
       message.content.startsWith("!startbot") ||
       message.content.startsWith("!stopbot")
     ) {
-      if (
-        message.member.permissions.has(PermissionsBitField.Flags.Administrator)
-      ) {
+      // Bot control commands
+      if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         if (message.content.startsWith("!startbot")) {
           botRunning = true;
           await message.reply("✅ The bot is now running.");
@@ -112,9 +111,7 @@ client.on("messageCreate", async (message) => {
           console.log("🛑 Bot stopped by an administrator.");
         }
       } else {
-        await message.reply(
-          "❌ You do not have permission to run this command."
-        );
+        await message.reply("❌ You do not have permission to run this command.");
       }
       return;
     }
@@ -142,8 +139,33 @@ client.on("messageCreate", async (message) => {
 
     for (const imageUrl of imageUrls) {
       const hash = await computeImageHash(imageUrl);
-      if (!hash) continue;
+      if (!hash) {
+        try {
+          // If image cannot be hashed, delete the message and notify the user
+          await message.delete();
 
+          await message.author.send(
+            `<@${message.author.id}> Sorry Please upload different types of images`
+          );
+          console.log(`📩 Sent DM to ${message.author.tag} about non-hashable image.`);
+
+          // Optionally notify the bot command channel about the deleted image
+          const botCommandChannel = await message.guild.channels.fetch(botCommandChannelId);
+          if (botCommandChannel) {
+            await botCommandChannel.send(
+              `<@${message.author.id}> Sorry, Please upload different types of images`
+            );
+            console.log(`📢 Sent notification to bot command channel about non-hashable image.`);
+          }
+
+          console.log(`🗑️ Deleted non-hashable image from ${message.author.tag}`);
+        } catch (err) {
+          console.error("🔴 Error deleting message for non-hashable image:", err);
+        }
+        continue;
+      }
+
+      // Existing logic for handling hashable images
       const existingImage = await Image.findOne({ hash });
 
       if (existingImage) {
@@ -178,6 +200,7 @@ client.on("messageCreate", async (message) => {
               `📢 Sent notification to bot command channel about duplicate image deletion.`
             );
           }
+
 
           console.log(`🗑️ Deleted duplicate image from ${message.author.tag}`);
         } catch (err) {
@@ -239,6 +262,7 @@ client.on("messageCreate", async (message) => {
     console.error("🔴 Unexpected error in messageCreate event:", error);
   }
 });
+
 
 /**
  * Event: Message Deleted
