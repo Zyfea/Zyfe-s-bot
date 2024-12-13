@@ -6,7 +6,6 @@ import {
 } from "discord.js";
 import mongoose from "mongoose";
 import fetch from "node-fetch";
-import crypto from "crypto";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -17,6 +16,7 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Mongoose schema for images
 const imageSchema = new mongoose.Schema({
   hash: { type: String, unique: true },
   guildId: String,
@@ -26,6 +26,15 @@ const imageSchema = new mongoose.Schema({
 });
 
 const Image = mongoose.model("Image", imageSchema);
+
+// Mongoose schema for guild configurations
+const guildSchema = new mongoose.Schema({
+  guildId: { type: String, unique: true },
+  activeChannelId: String,
+  botCommandChannelId: String,
+});
+
+const GuildConfig = mongoose.model("GuildConfig", guildSchema);
 
 const client = new Client({
   intents: [
@@ -38,8 +47,6 @@ const client = new Client({
 });
 
 let botRunning = true;
-const botCommandChannelId = process.env.COMMAND_CHANNEL_ID;
-const activeChannelId = process.env.ACTIVE_CHANNEL_ID;
 
 mongoose
   .connect(process.env.MONGODB_URI, {
@@ -55,9 +62,9 @@ mongoose
   });
 
 /**
- * Computes the SHA-256 hash of an image from its URL.
+ * Computes the hash of an image from its URL.
  * @param {string} url - The URL of the image.
- * @returns {string|null} - The hexadecimal hash string or null if failed.
+ * @returns {Promise<string|null>} - The hash string or null on error.
  */
 const computeImageHash = async (url) => {
   try {
@@ -80,41 +87,78 @@ const computeImageHash = async (url) => {
   }
 };
 
-client.once("ready", async () => {
+client.once("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}!`);
 });
 
-/**
- * Event: Message Created
- * Triggered whenever a new message is created in a guild the bot has access to.
- */
 client.on("messageCreate", async (message) => {
   try {
     if (message.author.bot) return;
 
-    // Check if the message is in the specified active channel
+    // Check if the bot has been set up for this guild
+    const guildConfig = await GuildConfig.findOne({
+      guildId: message.guild.id,
+    });
+
+    // Setup command
+    if (message.content.startsWith("!setup")) {
+      if (
+        !message.member.permissions.has(PermissionsBitField.Flags.Administrator)
+      ) {
+        await message.reply("❌ Only administrators can run this command.");
+        return;
+      }
+
+      const [_, activeChannelId, botCommandChannelId] =
+        message.content.split(" ");
+      if (!activeChannelId || !botCommandChannelId) {
+        await message.reply(
+          "❌ Usage: `!setup <activeChannelId> <botCommandChannelId>`"
+        );
+        return;
+      }
+
+      await GuildConfig.findOneAndUpdate(
+        { guildId: message.guild.id },
+        { guildId: message.guild.id, activeChannelId, botCommandChannelId },
+        { upsert: true }
+      );
+
+      await message.reply("✅ Configuration saved successfully.");
+      console.log(`✅ Setup completed for guild: ${message.guild.id}`);
+      return;
+    }
+
+    // If not configured, ignore messages
+    if (!guildConfig) return;
+
+    const { activeChannelId, botCommandChannelId } = guildConfig;
+
+    // Ignore messages outside the active channel
     if (message.channel.id !== activeChannelId) return;
 
+    // Start and stop bot commands
     if (
       message.content.startsWith("!startbot") ||
       message.content.startsWith("!stopbot")
     ) {
       if (
-        message.member.permissions.has(PermissionsBitField.Flags.Administrator)
+        !message.member.permissions.has(PermissionsBitField.Flags.Administrator)
       ) {
-        if (message.content.startsWith("!startbot")) {
-          botRunning = true;
-          await message.reply("✅ The bot is now running.");
-          console.log("✅ Bot started by an administrator.");
-        } else if (message.content.startsWith("!stopbot")) {
-          botRunning = false;
-          await message.reply("🛑 The bot has been stopped.");
-          console.log("🛑 Bot stopped by an administrator.");
-        }
-      } else {
         await message.reply(
           "❌ You do not have permission to run this command."
         );
+        return;
+      }
+
+      if (message.content.startsWith("!startbot")) {
+        botRunning = true;
+        await message.reply("✅ The bot is now running.");
+        console.log("✅ Bot started.");
+      } else {
+        botRunning = false;
+        await message.reply("🛑 The bot has been stopped.");
+        console.log("🛑 Bot stopped.");
       }
       return;
     }
@@ -140,13 +184,19 @@ client.on("messageCreate", async (message) => {
 
     if (imageUrls.length === 0) return;
 
+    console.log(`🔍 Checking ${imageUrls.length} image(s)...`);
+
     for (const imageUrl of imageUrls) {
       const hash = await computeImageHash(imageUrl);
       if (!hash) continue;
 
-      const existingImage = await Image.findOne({ hash });
+      console.log(`🔑 Image hash computed, Stored in the database`);
+
+      const existingImage = await Image.findOne({ hash, guildId: message.guild.id });
 
       if (existingImage) {
+        console.log("⚠️ Duplicate image detected, deleting message...");
+
         try {
           await message.delete();
 
@@ -154,38 +204,24 @@ client.on("messageCreate", async (message) => {
 
           try {
             await message.author.send(
-              `<@${message.author.id}> Your image was removed because it was identified as a duplicate.${originalLink}`
+              `<@${message.author.id}> Your image was removed because it was identified as a duplicate.\nOriginal post: ${originalLink}`
             );
-            console.log(
-              `📩 Sent DM to ${message.author.tag} about duplicate image.`
-            );
+            console.log(`📩 Sent DM to ${message.author.tag} about duplicate image.`);
           } catch (err) {
-            console.error(
-              `🔴 Could not send DM to ${message.author.tag}:`,
-              err
-            );
+            console.error("🔴 Could not send DM to user:", err);
           }
 
-          // Notify in the bot command channel about the deleted duplicate image
           const botCommandChannel = await message.guild.channels.fetch(
             botCommandChannelId
           );
           if (botCommandChannel) {
             await botCommandChannel.send(
-              `<@${message.author.id}> Your image was removed because it was identified as a duplicate.${originalLink}`
+              `<@${message.author.id}> Your image was removed because it was identified as a duplicate.\nOriginal post: ${originalLink}`
             );
-            console.log(
-              `📢 Sent notification to bot command channel about duplicate image deletion.`
-            );
+            console.log(`📢 Sent notification to bot command channel.`);
           }
-
-          console.log(`🗑️ Deleted duplicate image from ${message.author.tag}`);
         } catch (err) {
-          if (err.code === 10008) {
-            console.warn("⚠️ Tried to delete a message that does not exist.");
-          } else {
-            console.error("🔴 Error deleting message:", err);
-          }
+          console.error("🔴 Error deleting duplicate message:", err);
         }
       } else {
         const newImage = new Image({
@@ -198,40 +234,9 @@ client.on("messageCreate", async (message) => {
 
         try {
           await newImage.save();
-          console.log(`🆕 Saved new image hash from ${message.author.tag}`);
+          console.log(`✅ Saved new image hash for ${message.author.tag}`);
         } catch (err) {
-          if (err.code === 11000) {
-            try {
-              await message.delete();
-
-              const existing = await Image.findOne({ hash });
-
-              const originalLink = existing
-                ? `https://discord.com/channels/${existing.guildId}/${existing.channelId}/${existing.messageId}`
-                : "Unknown";
-
-              await message.author.send(
-                `<@${message.author.id}> Your image was removed because it was identified as a duplicate.${originalLink}`
-              );
-
-              console.log(
-                `📩 Sent DM to ${message.author.tag} about duplicate image.`
-              );
-              console.log(
-                `🗑️ Deleted duplicate image from ${message.author.tag}`
-              );
-            } catch (error) {
-              if (error.code === 10008) {
-                console.warn(
-                  "⚠️ Tried to delete a message that does not exist."
-                );
-              } else {
-                console.error("🔴 Error handling duplicate message:", error);
-              }
-            }
-          } else {
-            console.error("🔴 Error saving image hash:", err);
-          }
+          console.error("🔴 Error saving new image hash:", err);
         }
       }
     }
@@ -240,27 +245,16 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-/**
- * Event: Message Deleted
- * Triggered whenever a message is deleted in a guild the bot has access to.
- */
+// Delete image from database when message is deleted
 client.on("messageDelete", async (message) => {
   try {
-    if (!botRunning) return;
-
-    const imageRecord = await Image.findOne({ messageId: message.id });
-    if (!imageRecord) return;
-
-    await Image.deleteOne({ messageId: message.id });
-    console.log(
-      `🗑️ Removed image hash from database as original message was deleted.`
-    );
-  } catch (error) {
-    if (error.code === 10008) {
-      console.warn("⚠️ Tried to delete a message that does not exist.");
-    } else {
-      console.error("🔴 Unexpected error in messageDelete event:", error);
+    const imageRecord = await Image.findOne({ messageId: message.id, guildId: message.guild.id });
+    if (imageRecord) {
+      await Image.deleteOne({ messageId: message.id });
+      console.log(`🗑️ Deleted image record from database for message ${message.id}`);
     }
+  } catch (error) {
+    console.error("🔴 Error deleting image record:", error);
   }
 });
 
