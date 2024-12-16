@@ -208,7 +208,7 @@ client.on("messageCreate", async (message) => {
             );
             console.log(`📩 Sent DM to ${message.author.tag} about duplicate image.`);
           } catch (err) {
-            console.error("🔴 Could not send DM to user:", err);
+            console.log("🔴 Could not send DM to user: ");
           }
 
           const botCommandChannel = await message.guild.channels.fetch(
@@ -221,7 +221,7 @@ client.on("messageCreate", async (message) => {
             console.log(`📢 Sent notification to bot command channel.`);
           }
         } catch (err) {
-          console.error("🔴 Error deleting duplicate message:", err);
+          console.log("🔴 Error deleting duplicate message:");
         }
       } else {
         const newImage = new Image({
