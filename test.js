@@ -48,18 +48,20 @@ const client = new Client({
 
 let botRunning = true;
 
-mongoose
-  .connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => {
+// Improved MongoDB connection with retries
+const connectToDatabase = async () => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
     console.log("✅ Connected to MongoDB.");
-  })
-  .catch((err) => {
+  } catch (err) {
     console.error("❌ Failed to connect to MongoDB:", err);
-    process.exit(1);
-  });
+    setTimeout(connectToDatabase, 5000); // Retry after 5 seconds
+  }
+};
+connectToDatabase();
 
 /**
  * Computes the hash of an image from its URL.
@@ -170,7 +172,8 @@ client.on("messageCreate", async (message) => {
     message.attachments.forEach((attachment) => {
       if (
         attachment.contentType &&
-        attachment.contentType.startsWith("image/")
+        attachment.contentType.startsWith("image/") &&
+        attachment.url
       ) {
         imageUrls.push(attachment.url);
       }
@@ -221,7 +224,7 @@ client.on("messageCreate", async (message) => {
             console.log(`📢 Sent notification to bot command channel.`);
           }
         } catch (err) {
-          console.log("🔴 Error deleting duplicate message:");
+          console.log("🔴 Error deleting duplicate message:", err);
         }
       } else {
         const newImage = new Image({
@@ -256,6 +259,14 @@ client.on("messageDelete", async (message) => {
   } catch (error) {
     console.error("🔴 Error deleting image record:", error);
   }
+});
+
+// Graceful shutdown on process termination
+process.on('SIGINT', async () => {
+  console.log("🔴 Bot is shutting down gracefully...");
+  await mongoose.disconnect();
+  client.destroy();
+  process.exit(0);
 });
 
 client.login(process.env.DISCORD_TOKEN);
