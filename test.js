@@ -3,6 +3,7 @@ import {
   GatewayIntentBits,
   Partials,
   PermissionsBitField,
+  Events,
 } from "discord.js";
 import mongoose from "mongoose";
 import fetch from "node-fetch";
@@ -16,39 +17,42 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Mongoose schema for images
+const TEMP_ROLE_NAME = "Duplicate Image Warning"; // Name of the temporary role
+const TEMP_ROLE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+const DB_RETRY_INTERVAL = 5000; // 5 seconds
+const IMAGE_HASH_BITS = 16; // Bits for image hashing
+
+
 const imageSchema = new mongoose.Schema({
-  hash: { type: String, unique: true },
-  guildId: String,
-  channelId: String,
-  messageId: String,
-  url: String,
+  hash: { type: String, unique: true, required: true },
+  guildId: { type: String, required: true },
+  channelId: { type: String, required: true },
+  messageId: { type: String, required: true },
+  url: { type: String, required: true },
 });
 
 const Image = mongoose.model("Image", imageSchema);
 
-// Mongoose schema for guild configurations
 const guildSchema = new mongoose.Schema({
-  guildId: { type: String, unique: true },
-  activeChannelId: String,
-  botCommandChannelId: String,
+  guildId: { type: String, unique: true, required: true },
+  activeChannelId: { type: String, required: true },
+  botCommandChannelId: { type: String, required: true },
 });
 
 const GuildConfig = mongoose.model("GuildConfig", guildSchema);
 
 const client = new Client({
   intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.Guilds, // For guild-related events
+    GatewayIntentBits.GuildMessages, // For message-related events
+    GatewayIntentBits.MessageContent, // To read message content
+    GatewayIntentBits.DirectMessages, // For direct messages
   ],
-  partials: [Partials.Message, Partials.Channel],
+  partials: [Partials.Message, Partials.Channel], // For partials
 });
 
 let botRunning = true;
 
-// Improved MongoDB connection with retries
 const connectToDatabase = async () => {
   try {
     await mongoose.connect(process.env.MONGODB_URI, {
@@ -58,9 +62,11 @@ const connectToDatabase = async () => {
     console.log("✅ Connected to MongoDB.");
   } catch (err) {
     console.error("❌ Failed to connect to MongoDB:", err);
-    setTimeout(connectToDatabase, 5000); // Retry after 5 seconds
+    console.log(`🔄 Retrying MongoDB connection in ${DB_RETRY_INTERVAL / 1000} seconds...`);
+    setTimeout(connectToDatabase, DB_RETRY_INTERVAL);
   }
 };
+
 connectToDatabase();
 
 /**
@@ -74,8 +80,9 @@ const computeImageHash = async (url) => {
     if (!response.ok)
       throw new Error(`Failed to fetch image: ${response.statusText}`);
     const imageUrl = response.url;
-    return new Promise((resolve, reject) => {
-      imageHash(imageUrl, 16, true, (error, data) => {
+
+    return new Promise((resolve) => {
+      imageHash(imageUrl, IMAGE_HASH_BITS, true, (error, data) => {
         if (error) {
           console.error("🔴 Error computing image hash:", error);
           return resolve(null);
@@ -89,41 +96,101 @@ const computeImageHash = async (url) => {
   }
 };
 
-client.once("ready", () => {
+/**
+ * Creates the temporary role if it doesn't exist.
+ * @param {Guild} guild - The Discord guild.
+ * @returns {Promise<Role|null>} - The created or existing role, or null on failure.
+ */
+const createTempRole = async (guild) => {
+  try {
+    let role = guild.roles.cache.find((r) => r.name === TEMP_ROLE_NAME);
+    if (role) {
+      return role;
+    }
+
+    role = await guild.roles.create({
+      name: TEMP_ROLE_NAME,
+      color: "Red",
+      permissions: [],
+      reason: "Temporary role for duplicate image uploads",
+    });
+
+    console.log(`✅ Created temporary role "${TEMP_ROLE_NAME}" in guild "${guild.name}".`);
+    return role;
+  } catch (error) {
+    console.error(`🔴 Error creating temporary role in guild "${guild.name}":`, error);
+    return null;
+  }
+};
+
+/**
+ * Assigns a temporary role to a user for a specified duration.
+ * @param {Guild} guild - The Discord guild.
+ * @param {GuildMember} member - The guild member to assign the role to.
+ */
+const assignTempRole = async (guild, member) => {
+  try {
+    const role = await createTempRole(guild);
+    if (!role) return;
+
+    await member.roles.add(role);
+    console.log(`✅ Assigned temporary role to ${member.user.tag} in guild "${guild.name}".`);
+
+    setTimeout(async () => {
+      try {
+        await member.roles.remove(role);
+        console.log(`✅ Removed temporary role from ${member.user.tag} in guild "${guild.name}".`);
+      } catch (err) {
+        console.error(`🔴 Error removing temporary role from ${member.user.tag}:`, err);
+      }
+    }, TEMP_ROLE_DURATION);
+  } catch (error) {
+    console.error(`🔴 Error assigning temporary role to ${member.user.tag}:`, error);
+  }
+};
+
+client.once(Events.ClientReady, () => {
   console.log(`✅ Logged in as ${client.user.tag}!`);
 });
 
-client.on("messageCreate", async (message) => {
+client.on(Events.MessageCreate, async (message) => {
   try {
     if (message.author.bot) return;
 
-    // Check if the bot has been set up for this guild
-    const guildConfig = await GuildConfig.findOne({
-      guildId: message.guild.id,
-    });
+    if (!message.guild) return;
 
-    // Setup command
+    const guildConfig = await GuildConfig.findOne({ guildId: message.guild.id }).exec();
+
     if (message.content.startsWith("!setup")) {
-      if (
-        !message.member.permissions.has(PermissionsBitField.Flags.Administrator)
-      ) {
+      if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         await message.reply("❌ Only administrators can run this command.");
         return;
       }
 
-      const [_, activeChannelId, botCommandChannelId] =
-        message.content.split(" ");
-      if (!activeChannelId || !botCommandChannelId) {
-        await message.reply(
-          "❌ Usage: `!setup <activeChannelId> <botCommandChannelId>`"
-        );
+      const args = message.content.trim().split(/\s+/);
+      if (args.length !== 3) {
+        await message.reply("❌ Usage: `!setup <activeChannelId> <botCommandChannelId>`");
+        return;
+      }
+
+      const [_, activeChannelId, botCommandChannelId] = args;
+
+      const activeChannel = message.guild.channels.cache.get(activeChannelId);
+      const botCommandChannel = message.guild.channels.cache.get(botCommandChannelId);
+
+      if (!activeChannel || !botCommandChannel) {
+        await message.reply("❌ One or both channel IDs are invalid.");
         return;
       }
 
       await GuildConfig.findOneAndUpdate(
         { guildId: message.guild.id },
-        { guildId: message.guild.id, activeChannelId, botCommandChannelId },
-        { upsert: true }
+        {
+          guildId: message.guild.id,
+          activeChannelId,
+          botCommandChannelId,
+        },
+        { upsert: true, new: true }
       );
 
       await message.reply("✅ Configuration saved successfully.");
@@ -131,25 +198,9 @@ client.on("messageCreate", async (message) => {
       return;
     }
 
-    // If not configured, ignore messages
-    if (!guildConfig) return;
-
-    const { activeChannelId, botCommandChannelId } = guildConfig;
-
-    // Ignore messages outside the active channel
-    if (message.channel.id !== activeChannelId) return;
-
-    // Start and stop bot commands
-    if (
-      message.content.startsWith("!startbot") ||
-      message.content.startsWith("!stopbot")
-    ) {
-      if (
-        !message.member.permissions.has(PermissionsBitField.Flags.Administrator)
-      ) {
-        await message.reply(
-          "❌ You do not have permission to run this command."
-        );
+    if (message.content.startsWith("!startbot") || message.content.startsWith("!stopbot")) {
+      if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        await message.reply("❌ You do not have permission to run this command.");
         return;
       }
 
@@ -166,6 +217,12 @@ client.on("messageCreate", async (message) => {
     }
 
     if (!botRunning) return;
+
+    if (!guildConfig) return;
+
+    const { activeChannelId, botCommandChannelId } = guildConfig;
+
+    if (message.channel.id !== activeChannelId) return;
 
     let imageUrls = [];
 
@@ -187,44 +244,52 @@ client.on("messageCreate", async (message) => {
 
     if (imageUrls.length === 0) return;
 
-    console.log(`🔍 Checking ${imageUrls.length} image(s)...`);
+    console.log(`🔍 Checking ${imageUrls.length} image(s) in message ${message.id} from user ${message.author.tag}.`);
 
     for (const imageUrl of imageUrls) {
       const hash = await computeImageHash(imageUrl);
       if (!hash) continue;
 
-      console.log(`🔑 Image hash computed, Stored in the database`);
-
-      const existingImage = await Image.findOne({ hash, guildId: message.guild.id });
+      const existingImage = await Image.findOne({ hash, guildId: message.guild.id }).exec();
 
       if (existingImage) {
-        console.log("⚠️ Duplicate image detected, deleting message...");
+        console.log(`⚠️ Duplicate image detected in guild "${message.guild.id}".`);
 
         try {
           await message.delete();
+          console.log(`🗑️ Deleted duplicate message ${message.id} from user ${message.author.tag}.`);
+        } catch (err) {
+          console.error(`🔴 Error deleting message ${message.id}:`, err);
+        }
 
-          const originalLink = `https://discord.com/channels/${existingImage.guildId}/${existingImage.channelId}/${existingImage.messageId}`;
+        const originalLink = `https://discord.com/channels/${existingImage.guildId}/${existingImage.channelId}/${existingImage.messageId}`;
 
-          try {
-            await message.author.send(
-              `<@${message.author.id}> Your image was removed because it was identified as a duplicate.\nOriginal post: ${originalLink}`
-            );
-            console.log(`📩 Sent DM to ${message.author.tag} about duplicate image.`);
-          } catch (err) {
-            console.log("🔴 Could not send DM to user: ");
-          }
-
-          const botCommandChannel = await message.guild.channels.fetch(
-            botCommandChannelId
+        try {
+          await message.author.send(
+            `⚠️ You have uploaded a duplicate image. Your image was removed.\nOriginal image: ${originalLink}`
           );
-          if (botCommandChannel) {
+          console.log(`📩 Sent DM to ${message.author.tag} about duplicate image.`);
+        } catch (err) {
+          console.error(`🔴 Could not send DM to ${message.author.tag}:`, err);
+        }
+
+        try {
+          const botCommandChannel = await message.guild.channels.fetch(botCommandChannelId);
+          if (botCommandChannel && botCommandChannel.isTextBased()) {
             await botCommandChannel.send(
-              `<@${message.author.id}> Your image was removed because it was identified as a duplicate.\nOriginal post: ${originalLink}`
+              `⚠️ <@${message.author.id}> uploaded a duplicate image. The image was removed.\nOriginal image: ${originalLink}`
             );
-            console.log(`📢 Sent notification to bot command channel.`);
+            console.log(`📢 Sent notification to bot command channel in guild "${message.guild.id}".`);
           }
         } catch (err) {
-          console.log("🔴 Error deleting duplicate message:", err);
+          console.error(`🔴 Error sending notification to bot command channel:`, err);
+        }
+
+        const member = await message.guild.members.fetch(message.author.id).catch(() => null);
+        if (member) {
+          await assignTempRole(message.guild, member);
+        } else {
+          console.error(`🔴 Could not fetch member ${message.author.tag} to assign temporary role.`);
         }
       } else {
         const newImage = new Image({
@@ -237,9 +302,13 @@ client.on("messageCreate", async (message) => {
 
         try {
           await newImage.save();
-          console.log(`✅ Saved new image hash for ${message.author.tag}`);
+          console.log(`✅ Saved new image hash for ${message.author.tag} in guild "${message.guild.id}".`);
         } catch (err) {
-          console.error("🔴 Error saving new image hash:", err);
+          if (err.code === 11000) {
+            console.warn(`⚠️ Duplicate hash detected while saving for message ${message.id}.`);
+          } else {
+            console.error(`🔴 Error saving image hash for message ${message.id}:`, err);
+          }
         }
       }
     }
@@ -248,25 +317,45 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// Delete image from database when message is deleted
-client.on("messageDelete", async (message) => {
+client.on(Events.MessageDelete, async (message) => {
   try {
-    const imageRecord = await Image.findOne({ messageId: message.id, guildId: message.guild.id });
+    if (!message.guild) return;
+
+    const imageRecord = await Image.findOne({ messageId: message.id, guildId: message.guild.id }).exec();
+
     if (imageRecord) {
-      await Image.deleteOne({ messageId: message.id });
-      console.log(`🗑️ Deleted image record from database for message ${message.id}`);
+      await Image.deleteOne({ messageId: message.id, guildId: message.guild.id }).exec();
+      console.log(`🗑️ Deleted image record for message ${message.id} from database.`);
     }
   } catch (error) {
-    console.error("🔴 Error deleting image record:", error);
+    console.error("🔴 Error in messageDelete event:", error);
   }
 });
 
-// Graceful shutdown on process termination
-process.on('SIGINT', async () => {
+const gracefulShutdown = async () => {
   console.log("🔴 Bot is shutting down gracefully...");
-  await mongoose.disconnect();
-  client.destroy();
-  process.exit(0);
-});
 
-client.login(process.env.DISCORD_TOKEN);
+  try {
+    await mongoose.disconnect();
+    console.log("✅ Disconnected from MongoDB.");
+  } catch (err) {
+    console.error("🔴 Error disconnecting from MongoDB:", err);
+  }
+
+  try {
+    await client.destroy();
+    console.log("✅ Discord client destroyed.");
+  } catch (err) {
+    console.error("🔴 Error destroying Discord client:", err);
+  }
+
+  process.exit(0);
+};
+
+process.on("SIGINT", gracefulShutdown);
+process.on("SIGTERM", gracefulShutdown);
+
+client.login(process.env.DISCORD_TOKEN).catch((err) => {
+  console.error("🔴 Failed to login to Discord:", err);
+  process.exit(1);
+});
