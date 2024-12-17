@@ -195,10 +195,48 @@ client.on("messageCreate", async (message) => {
 
       console.log(`🔑 Image hash computed, Stored in the database`);
 
-      const existingImage = await Image.findOne({ hash, guildId: message.guild.id });
+      const existingImage = await Image.findOne({
+        hash,
+        guildId: message.guild.id,
+      });
 
       if (existingImage) {
         console.log("⚠️ Duplicate image detected, deleting message...");
+
+        let emptyRole = message.guild.roles.cache.find(
+          (role) => role.name === "Empty Role"
+        );
+        if (!emptyRole) {
+          try {
+            emptyRole = await message.guild.roles.create({
+              name: "Empty Role",
+              color: "DEFAULT",
+              reason: "Role to penalize users for uploading duplicate images.",
+            });
+            console.log("✅ Created 'Empty Role' in the guild.");
+          } catch (err) {
+            console.error("🔴 Failed to create 'Empty Role':", err);
+            return;
+          }
+        }
+
+        try {
+          await message.member.roles.add(emptyRole);
+          console.log(
+            `✅ Assigned 'Empty Role' to ${message.author.tag} for 24 hours.`
+          );
+        } catch (err) {
+          console.error("🔴 Failed to assign 'Empty Role':", err);
+        }
+
+        setTimeout(async () => {
+          try {
+            await message.member.roles.remove(emptyRole);
+            console.log(`✅ Removed 'Empty Role' from ${message.author.tag}.`);
+          } catch (err) {
+            console.error("🔴 Failed to remove 'Empty Role':", err);
+          }
+        }, 24 * 60 * 60 * 1000);
 
         try {
           await message.delete();
@@ -209,9 +247,11 @@ client.on("messageCreate", async (message) => {
             await message.author.send(
               `<@${message.author.id}> Your image was removed because it was identified as a duplicate.\nOriginal post: ${originalLink}`
             );
-            console.log(`📩 Sent DM to ${message.author.tag} about duplicate image.`);
+            console.log(
+              `📩 Sent DM to ${message.author.tag} about duplicate image.`
+            );
           } catch (err) {
-            console.log("🔴 Could not send DM to user: ");
+            console.log("🔴 Could not send DM to user: ", err);
           }
 
           const botCommandChannel = await message.guild.channels.fetch(
@@ -251,10 +291,15 @@ client.on("messageCreate", async (message) => {
 // Delete image from database when message is deleted
 client.on("messageDelete", async (message) => {
   try {
-    const imageRecord = await Image.findOne({ messageId: message.id, guildId: message.guild.id });
+    const imageRecord = await Image.findOne({
+      messageId: message.id,
+      guildId: message.guild.id,
+    });
     if (imageRecord) {
       await Image.deleteOne({ messageId: message.id });
-      console.log(`🗑️ Deleted image record from database for message ${message.id}`);
+      console.log(
+        `🗑️ Deleted image record from database for message ${message.id}`
+      );
     }
   } catch (error) {
     console.error("🔴 Error deleting image record:", error);
@@ -262,7 +307,7 @@ client.on("messageDelete", async (message) => {
 });
 
 // Graceful shutdown on process termination
-process.on('SIGINT', async () => {
+process.on("SIGINT", async () => {
   console.log("🔴 Bot is shutting down gracefully...");
   await mongoose.disconnect();
   client.destroy();
