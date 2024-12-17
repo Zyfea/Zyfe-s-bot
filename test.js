@@ -245,7 +245,7 @@ client.on("messageCreate", async (message) => {
 
           try {
             await message.author.send(
-              `<@${message.author.id}> Your image was removed because it was identified as a duplicate.\nOriginal post: ${originalLink}`
+              `<@${message.author.id}> Your image was removed because it was identified as a duplicate. You cannot post images for 24 hours. \nOriginal post: ${originalLink}`
             );
             console.log(
               `📩 Sent DM to ${message.author.tag} about duplicate image.`
@@ -259,7 +259,7 @@ client.on("messageCreate", async (message) => {
           );
           if (botCommandChannel) {
             await botCommandChannel.send(
-              `<@${message.author.id}> Your image was removed because it was identified as a duplicate.\nOriginal post: ${originalLink}`
+              `<@${message.author.id}> Your image was removed because it was identified as a duplicate. You cannot post images for 24 hours. \nOriginal post: ${originalLink}`
             );
             console.log(`📢 Sent notification to bot command channel.`);
           }
