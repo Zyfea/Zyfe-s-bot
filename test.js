@@ -327,7 +327,7 @@ client.on("messageCreate", async (message) => {
               try {
                 tempRole = await message.guild.roles.create({
                   name: "temp",
-                  color: "DEFAULT",
+                  color: "#000",
                   reason:
                     "Role to penalize users for uploading duplicate images.",
                 });
