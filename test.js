@@ -204,18 +204,18 @@ client.on("messageCreate", async (message) => {
         console.log("⚠️ Duplicate image detected, deleting message...");
 
         let emptyRole = message.guild.roles.cache.find(
-          (role) => role.name === "Empty Role"
+          (role) => role.name === "temp"
         );
         if (!emptyRole) {
           try {
             emptyRole = await message.guild.roles.create({
-              name: "Empty Role",
+              name: "temp",
               color: "DEFAULT",
               reason: "Role to penalize users for uploading duplicate images.",
             });
-            console.log("✅ Created 'Empty Role' in the guild.");
+            console.log("✅ Created 'temp' in the guild.");
           } catch (err) {
-            console.error("🔴 Failed to create 'Empty Role':", err);
+            console.error("🔴 Failed to create 'temp':", err);
             return;
           }
         }
@@ -223,18 +223,18 @@ client.on("messageCreate", async (message) => {
         try {
           await message.member.roles.add(emptyRole);
           console.log(
-            `✅ Assigned 'Empty Role' to ${message.author.tag} for 24 hours.`
+            `✅ Assigned 'temp' to ${message.author.tag} for 24 hours.`
           );
         } catch (err) {
-          console.error("🔴 Failed to assign 'Empty Role':", err);
+          console.error("🔴 Failed to assign 'temp':", err);
         }
 
         setTimeout(async () => {
           try {
             await message.member.roles.remove(emptyRole);
-            console.log(`✅ Removed 'Empty Role' from ${message.author.tag}.`);
+            console.log(`✅ Removed 'temp' from ${message.author.tag}.`);
           } catch (err) {
-            console.error("🔴 Failed to remove 'Empty Role':", err);
+            console.error("🔴 Failed to remove 'temp':", err);
           }
         }, 24 * 60 * 60 * 1000);
 
