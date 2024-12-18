@@ -282,7 +282,7 @@ client.on("messageCreate", async (message) => {
           // Notify the user via DM
           try {
             await message.author.send(
-              `<@${message.author.id}> Your image was removed because it was identified as a duplicate. You will be assigned the "Duplicate Image" role and will not be able to enter the giveaway for 24 hours. \nOriginal post: ${originalLink}`
+              `<@${message.author.id}> Your image was removed because it was identified as a duplicate. You have been assigned the "Duplicate Image" role and will not be able to enter the giveaway for 24 hours. \nOriginal post: ${originalLink}`
             );
             console.log(
               `📩 Sent DM to ${message.author.tag} about duplicate image.`
@@ -298,7 +298,7 @@ client.on("messageCreate", async (message) => {
             );
             if (botCommandChannel) {
               await botCommandChannel.send(
-                `<@${message.author.id}> Your image was removed because it was identified as a duplicate. You will be assigned the "Duplicate Image" role and will not be able to enter the giveaway for 24 hours. \nOriginal post: ${originalLink}`
+                `<@${message.author.id}> Your image was removed because it was identified as a duplicate. You have been assigned the "Duplicate Image" role and will not be able to enter the giveaway for 24 hours. \nOriginal post: ${originalLink}`
               );
               console.log(`📢 Sent notification to bot command channel.`);
             }
