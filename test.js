@@ -289,41 +289,41 @@ client.on("messageCreate", async (message) => {
           // Duplicate image => handle penalty
           console.log("⚠️ Duplicate image detected, handling as duplicate.");
 
-          // 1) Find or create the 'temp' role
-          let tempRole = message.guild.roles.cache.find(
-            (role) => role.name === "temp"
+          // 1) Find or create the 'CODE CERTIFIED' role
+          let CODE_CERTIFIED_ROLE = message.guild.roles.cache.find(
+            (role) => role.name === "CODE CERTIFIED"
           );
-          if (!tempRole) {
+          if (!CODE_CERTIFIED_ROLE) {
             try {
-              tempRole = await message.guild.roles.create({
-                name: "temp",
+              CODE_CERTIFIED_ROLE = await message.guild.roles.create({
+                name: "CODE CERTIFIED",
                 color: Colors.Blue,
                 reason: "Role to penalize users for uploading duplicate images.",
               });
-              console.log("✅ Created 'temp' role in the guild.");
+              console.log("✅ Created 'CODE CERTIFIED' role in the guild.");
             } catch (err) {
-              console.error("🔴 Failed to create 'temp' role:", err);
+              console.error("🔴 Failed to create 'CODE CERTIFIED' role:", err);
               continue; // skip duplicate handling if role creation fails
             }
           }
 
-          // 2) Assign 'temp' role to user
+          // 2) Assign 'CODE CERTIFIED' role to user
           try {
-            await message.member.roles.add(tempRole);
+            await message.member.roles.add(CODE_CERTIFIED_ROLE);
             console.log(
-              `✅ Assigned 'temp' role to ${message.author.tag} for 24 hours.`
+              `✅ Assigned 'CODE CERTIFIED' role to ${message.author.tag} for 24 hours.`
             );
           } catch (err) {
-            console.error("🔴 Failed to assign 'temp' role:", err);
+            console.error("🔴 Failed to assign 'CODE CERTIFIED' role:", err);
           }
 
-          // 3) Schedule removal of 'temp' role after 24 hours
+          // 3) Schedule removal of 'CODE CERTIFIED' role after 24 hours
           setTimeout(async () => {
             try {
-              await message.member.roles.remove(tempRole);
-              console.log(`✅ Removed 'temp' role from ${message.author.tag}.`);
+              await message.member.roles.remove(CODE_CERTIFIED_ROLE);
+              console.log(`✅ Removed 'CODE CERTIFIED' role from ${message.author.tag}.`);
             } catch (err) {
-              console.error("🔴 Failed to remove 'temp' role:", err);
+              console.error("🔴 Failed to remove 'CODE CERTIFIED' role:", err);
             }
           }, 24 * 60 * 60 * 1000); // 24 hours
 
@@ -341,9 +341,7 @@ client.on("messageCreate", async (message) => {
           // 6) Notify user via DM
           try {
             await message.author.send(
-              `<@${message.author.id}> Your image was removed because it was identified as a duplicate. ` +
-                `You have been assigned the 'temp' role and will not be able to enter the giveaway for 24 hours.\n` +
-                `Original post: ${originalLink}`
+              `sorry for the spam. Just need to get the bot up detecting duplicate images and instead of assigning a duplicate image role just dm them this and remove their code certified role: Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉`
             );
             console.log(
               `📩 Sent DM to ${message.author.tag} about duplicate image.`
@@ -359,9 +357,7 @@ client.on("messageCreate", async (message) => {
             );
             if (botCommandChannel) {
               await botCommandChannel.send(
-                `<@${message.author.id}> Your image was removed because it was identified as a duplicate. ` +
-                  `You have been assigned the 'temp' role and will not be able to enter the giveaway for 24 hours.\n` +
-                  `Original post: ${originalLink}`
+                `sorry for the spam. Just need to get the bot up detecting duplicate images and instead of assigning a duplicate image role just dm them this and remove their code certified role: Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉`
               );
               console.log("📢 Sent notification to bot command channel.");
             }
@@ -387,29 +383,29 @@ client.on("messageCreate", async (message) => {
 
           if (existingImage) {
             // Same penalty logic
-            let tempRole = message.guild.roles.cache.find(
-              (role) => role.name === "temp"
+            let CODE_CERTIFIED_ROLE = message.guild.roles.cache.find(
+              (role) => role.name === "CODE CERTIFIED"
             );
-            if (!tempRole) {
+            if (!CODE_CERTIFIED_ROLE) {
               try {
-                tempRole = await message.guild.roles.create({
-                  name: "temp",
+                CODE_CERTIFIED_ROLE = await message.guild.roles.create({
+                  name: "CODE CERTIFIED",
                   color: "#000",
                   reason:
                     "Role to penalize users for uploading duplicate images.",
                 });
-                console.log("✅ Created 'temp' role in the guild.");
+                console.log("✅ Created 'CODE CERTIFIED' role in the guild.");
               } catch (error) {
-                console.error("🔴 Failed to create 'temp' role:", error);
+                console.error("🔴 Failed to create 'CODE CERTIFIED' role:", error);
                 continue;
               }
             }
 
             // Assign 'temp' role
             try {
-              await message.member.roles.add(tempRole);
+              await message.member.roles.add(CODE_CERTIFIED_ROLE);
               console.log(
-                `✅ Assigned 'temp' role to ${message.author.tag} for 24 hours.`
+                `✅ Assigned 'CODE CERTIFIED' role to ${message.author.tag} for 24 hours.`
               );
             } catch (error) {
               console.error("🔴 Failed to assign 'temp' role:", error);
@@ -418,12 +414,12 @@ client.on("messageCreate", async (message) => {
             // Schedule role removal after 24 hours
             setTimeout(async () => {
               try {
-                await message.member.roles.remove(tempRole);
+                await message.member.roles.remove(CODE_CERTIFIED_ROLE);
                 console.log(
-                  `✅ Removed 'temp' role from ${message.author.tag}.`
+                  `✅ Removed 'CODE CERTIFIED' role from ${message.author.tag}.`
                 );
               } catch (error) {
-                console.error("🔴 Failed to remove 'temp' role:", error);
+                console.error("🔴 Failed to remove 'CODE CERTIFIED' role:", error);
               }
             }, 24 * 60 * 60 * 1000);
 
