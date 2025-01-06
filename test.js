@@ -4,7 +4,7 @@ import {
   GatewayIntentBits,
   Partials,
   PermissionsBitField,
-  Colors
+  Colors,
 } from "discord.js";
 import mongoose from "mongoose";
 import fetch from "node-fetch";
@@ -200,7 +200,9 @@ client.on("messageCreate", async (message) => {
       if (
         !message.member.permissions.has(PermissionsBitField.Flags.Administrator)
       ) {
-        await message.reply("❌ You do not have permission to run this command.");
+        await message.reply(
+          "❌ You do not have permission to run this command."
+        );
         return;
       }
 
@@ -275,7 +277,8 @@ client.on("messageCreate", async (message) => {
         // Determine if it was newly inserted or updated
         const wasInserted =
           existingImage.createdAt &&
-          existingImage.createdAt.getTime() === existingImage.updatedAt.getTime();
+          existingImage.createdAt.getTime() ===
+            existingImage.updatedAt.getTime();
 
         if (wasInserted) {
           // New image
@@ -345,7 +348,9 @@ client.on("messageCreate", async (message) => {
         // DUPLICATE KEY ERROR (E11000)
         // --------------------------------------------------
         if (err.code === 11000) {
-          console.log("⚠️ Duplicate key error detected, handling as duplicate.");
+          console.log(
+            "⚠️ Duplicate key error detected, handling as duplicate."
+          );
 
           // Check if we can fetch the existing record
           const existingImage = await Image.findOne({
@@ -412,9 +417,54 @@ client.on("messageCreate", async (message) => {
                 error
               );
             }
+            // 5) Send DM to the user if possible, otherwise notify the server channel
+            try {
+              // Attempt to create a DM channel
+              const dmChannel = await message.author.createDM();
+
+              // Send the message to the user
+              await dmChannel.send(
+                "Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new 'Original Image' to receive 'CODE CERTIFIED' to participate in giveaways 🎉"
+              );
+              console.log(
+                `📩 Sent DM to ${message.author.tag} about duplicate image.`
+              );
+            } catch (err) {
+              if (err.code === 50007) {
+                // If DMs are closed for the user, log and notify the server channel
+                console.log(
+                  `🔴 Cannot send DM to ${message.author.tag}. DMs are closed.`
+                );
+
+                // Send a notification to the bot command channel instead
+                try {
+                  const botCommandChannel = await message.guild.channels.fetch(
+                    botCommandChannelId
+                  );
+                  if (botCommandChannel) {
+                    await botCommandChannel.send(
+                      `⚠️ User ${message.author.tag}'s image was removed because it was identified as a duplicate based on its content or name. Please ask them to resubmit a new "Original Image" to receive "CODE CERTIFIED" and participate in giveaways.`
+                    );
+                    console.log("📢 Sent notification to bot command channel.");
+                  }
+                } catch (err) {
+                  console.error(
+                    "🔴 Failed to send notification to bot command channel:",
+                    err
+                  );
+                }
+              } else {
+                // Log other errors that occurred while sending DM
+                console.error("🔴 Error sending DM:", err);
+              }
+            }
+
+            // Continue with your existing logic after this block...
           } else {
             // The existing record isn't found — can happen due to race conditions
-            console.error("🔴 Duplicate key error but existing image not found.");
+            console.error(
+              "🔴 Duplicate key error but existing image not found."
+            );
           }
         } else {
           // Some other error
