@@ -108,10 +108,7 @@ const computeImageHash = async (url) => {
       throw new Error(`Failed to fetch image: ${response.statusText}`);
     }
 
-    // image-hash requires a *file path* or a *file buffer*, but
-    // it can also sometimes use a remote URL (depending on the version).
-    // If you run into issues, you might need to save the image to disk
-    // or convert to a buffer first. For simplicity, we’re passing the URL directly.
+    // image-hash requires a file path or buffer. We use the response URL directly here.
     const imageUrl = response.url;
 
     return new Promise((resolve) => {
@@ -263,7 +260,6 @@ client.on("messageCreate", async (message) => {
 
       try {
         // Attempt upsert
-        // setOnInsert only sets these fields on the *insert* portion of upsert
         const existingImage = await Image.findOneAndUpdate(
           { hash, guildId: message.guild.id },
           {
@@ -277,7 +273,6 @@ client.on("messageCreate", async (message) => {
         );
 
         // Determine if it was newly inserted or updated
-        // A quick trick: newly inserted docs have matching createdAt == updatedAt
         const wasInserted =
           existingImage.createdAt &&
           existingImage.createdAt.getTime() === existingImage.updatedAt.getTime();
@@ -289,45 +284,25 @@ client.on("messageCreate", async (message) => {
           // Duplicate image => handle penalty
           console.log("⚠️ Duplicate image detected, handling as duplicate.");
 
-          // 1) Find or create the 'CODE CERTIFIED' role
-          let CODE_CERTIFIED_ROLE = message.guild.roles.cache.find(
+          // 1) Remove 'CODE CERTIFIED' role from the user if they have it
+          const codeCertifiedRole = message.guild.roles.cache.find(
             (role) => role.name === "CODE CERTIFIED"
           );
-          if (!CODE_CERTIFIED_ROLE) {
+          if (
+            codeCertifiedRole &&
+            message.member.roles.cache.has(codeCertifiedRole.id)
+          ) {
             try {
-              CODE_CERTIFIED_ROLE = await message.guild.roles.create({
-                name: "CODE CERTIFIED",
-                color: Colors.Blue,
-                reason: "Role to penalize users for uploading duplicate images.",
-              });
-              console.log("✅ Created 'CODE CERTIFIED' role in the guild.");
-            } catch (err) {
-              console.error("🔴 Failed to create 'CODE CERTIFIED' role:", err);
-              continue; // skip duplicate handling if role creation fails
-            }
-          }
-
-          // 2) Assign 'CODE CERTIFIED' role to user
-          try {
-            await message.member.roles.add(CODE_CERTIFIED_ROLE);
-            console.log(
-              `✅ Assigned 'CODE CERTIFIED' role to ${message.author.tag} for 24 hours.`
-            );
-          } catch (err) {
-            console.error("🔴 Failed to assign 'CODE CERTIFIED' role:", err);
-          }
-
-          // 3) Schedule removal of 'CODE CERTIFIED' role after 24 hours
-          setTimeout(async () => {
-            try {
-              await message.member.roles.remove(CODE_CERTIFIED_ROLE);
-              console.log(`✅ Removed 'CODE CERTIFIED' role from ${message.author.tag}.`);
+              await message.member.roles.remove(codeCertifiedRole);
+              console.log(
+                `✅ Removed 'CODE CERTIFIED' role from ${message.author.tag}.`
+              );
             } catch (err) {
               console.error("🔴 Failed to remove 'CODE CERTIFIED' role:", err);
             }
-          }, 24 * 60 * 60 * 1000); // 24 hours
+          }
 
-          // 4) Delete the duplicate message
+          // 2) Delete the duplicate message
           try {
             await message.delete();
             console.log("🗑️ Deleted duplicate message.");
@@ -335,13 +310,10 @@ client.on("messageCreate", async (message) => {
             console.error("🔴 Error deleting duplicate message:", err);
           }
 
-          // 5) Construct the link to the *original* image
-          const originalLink = `https://discord.com/channels/${existingImage.guildId}/${existingImage.channelId}/${existingImage.messageId}`;
-
-          // 6) Notify user via DM
+          // 3) DM the user about the removal
           try {
             await message.author.send(
-              `sorry for the spam. Just need to get the bot up detecting duplicate images and instead of assigning a duplicate image role just dm them this and remove their code certified role: Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉`
+              `Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉`
             );
             console.log(
               `📩 Sent DM to ${message.author.tag} about duplicate image.`
@@ -350,14 +322,14 @@ client.on("messageCreate", async (message) => {
             console.log("🔴 Could not send DM to user:", err);
           }
 
-          // 7) Notify the bot command channel
+          // 4) Notify the bot command channel (optional)
           try {
             const botCommandChannel = await message.guild.channels.fetch(
               botCommandChannelId
             );
             if (botCommandChannel) {
               await botCommandChannel.send(
-                `sorry for the spam. Just need to get the bot up detecting duplicate images and instead of assigning a duplicate image role just dm them this and remove their code certified role: Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉`
+                `<@${message.author.id}> had a duplicate image removed.`
               );
               console.log("📢 Sent notification to bot command channel.");
             }
@@ -382,48 +354,28 @@ client.on("messageCreate", async (message) => {
           });
 
           if (existingImage) {
-            // Same penalty logic
-            let CODE_CERTIFIED_ROLE = message.guild.roles.cache.find(
+            // 1) Remove 'CODE CERTIFIED' role if present
+            const codeCertifiedRole = message.guild.roles.cache.find(
               (role) => role.name === "CODE CERTIFIED"
             );
-            if (!CODE_CERTIFIED_ROLE) {
+            if (
+              codeCertifiedRole &&
+              message.member.roles.cache.has(codeCertifiedRole.id)
+            ) {
               try {
-                CODE_CERTIFIED_ROLE = await message.guild.roles.create({
-                  name: "CODE CERTIFIED",
-                  color: "#000",
-                  reason:
-                    "Role to penalize users for uploading duplicate images.",
-                });
-                console.log("✅ Created 'CODE CERTIFIED' role in the guild.");
-              } catch (error) {
-                console.error("🔴 Failed to create 'CODE CERTIFIED' role:", error);
-                continue;
-              }
-            }
-
-            // Assign 'temp' role
-            try {
-              await message.member.roles.add(CODE_CERTIFIED_ROLE);
-              console.log(
-                `✅ Assigned 'CODE CERTIFIED' role to ${message.author.tag} for 24 hours.`
-              );
-            } catch (error) {
-              console.error("🔴 Failed to assign 'temp' role:", error);
-            }
-
-            // Schedule role removal after 24 hours
-            setTimeout(async () => {
-              try {
-                await message.member.roles.remove(CODE_CERTIFIED_ROLE);
+                await message.member.roles.remove(codeCertifiedRole);
                 console.log(
                   `✅ Removed 'CODE CERTIFIED' role from ${message.author.tag}.`
                 );
               } catch (error) {
-                console.error("🔴 Failed to remove 'CODE CERTIFIED' role:", error);
+                console.error(
+                  "🔴 Failed to remove 'CODE CERTIFIED' role:",
+                  error
+                );
               }
-            }, 24 * 60 * 60 * 1000);
+            }
 
-            // Delete the duplicate message
+            // 2) Delete the duplicate message
             try {
               await message.delete();
               console.log("🗑️ Deleted duplicate message.");
@@ -431,15 +383,10 @@ client.on("messageCreate", async (message) => {
               console.error("🔴 Error deleting duplicate message:", error);
             }
 
-            // Construct original link
-            const originalLink = `https://discord.com/channels/${existingImage.guildId}/${existingImage.channelId}/${existingImage.messageId}`;
-
-            // DM the user
+            // 3) DM the user
             try {
               await message.author.send(
-                `<@${message.author.id}> Your image was removed because it was identified as a duplicate. ` +
-                  `You cannot post images for 24 hours.\n` +
-                  `Original post: ${originalLink}`
+                `Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉`
               );
               console.log(
                 `📩 Sent DM to ${message.author.tag} about duplicate image.`
@@ -448,16 +395,14 @@ client.on("messageCreate", async (message) => {
               console.log("🔴 Could not send DM to user:", error);
             }
 
-            // Notify the bot command channel
+            // 4) Notify the bot command channel (optional)
             try {
               const botCommandChannel = await message.guild.channels.fetch(
                 botCommandChannelId
               );
               if (botCommandChannel) {
                 await botCommandChannel.send(
-                  `<@${message.author.id}> Your image was removed because it was identified as a duplicate. ` +
-                    `You cannot post images for 24 hours.\n` +
-                    `Original post: ${originalLink}`
+                  `<@${message.author.id}> had a duplicate image removed.`
                 );
                 console.log("📢 Sent notification to bot command channel.");
               }
