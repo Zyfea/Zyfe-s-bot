@@ -316,8 +316,7 @@ client.on("messageCreate", async (message) => {
           // 5) Notify user via DM
           try {
             await message.author.send(
-              `\`\`\` Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉\`\`\``
-            );
+              "Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new Orginal Image to receive 'CODE CERTIFIED' to participate in giveaways 🎉"            );
             console.log(
               `📩 Sent DM to ${message.author.tag} about duplicate image.`
             );
@@ -332,8 +331,7 @@ client.on("messageCreate", async (message) => {
             );
             if (botCommandChannel) {
               await botCommandChannel.send(
-                `\`\`\` Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉\`\`\``
-              );
+                "Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new Orginal Image to receive 'CODE CERTIFIED' to participate in giveaways 🎉"              );
               console.log("📢 Sent notification to bot command channel.");
             }
           } catch (err) {
@@ -405,7 +403,7 @@ client.on("messageCreate", async (message) => {
             // DM the user
             try {
               await message.author.send(
-                `\`\`\` Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉\`\`\``
+                "Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new Orginal Image to receive 'CODE CERTIFIED' to participate in giveaways 🎉"
               );
               console.log(
                 `📩 Sent DM to ${message.author.tag} about duplicate image.`
@@ -421,8 +419,7 @@ client.on("messageCreate", async (message) => {
               );
               if (botCommandChannel) {
                 await botCommandChannel.send(
-                  `\`\`\` Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉\`\`\``
-                );
+                  "Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new Orginal Image to receive 'CODE CERTIFIED' to participate in giveaways 🎉"                );
                 console.log("📢 Sent notification to bot command channel.");
               }
             } catch (error) {
