@@ -4,7 +4,7 @@
   "description": "A Discord bot that removes repeated images from all channels.",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon --no-warnings test.js"
+    "start": "nodemon index.js"
   },
   "keywords": [
     "discord",
