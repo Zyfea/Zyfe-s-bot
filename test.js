@@ -4,7 +4,7 @@ import {
   GatewayIntentBits,
   Partials,
   PermissionsBitField,
-  Colors
+  Colors,
 } from "discord.js";
 import mongoose from "mongoose";
 import fetch from "node-fetch";
@@ -22,7 +22,7 @@ const __dirname = path.dirname(__filename);
 
 // -----------------------------------------------------------------------------
 /* MONGOOSE SCHEMAS (Unchanged)
-*/
+ */
 // -----------------------------------------------------------------------------
 
 // 1) Image Schema:
@@ -49,7 +49,7 @@ const GuildConfig = mongoose.model("GuildConfig", guildSchema);
 
 // -----------------------------------------------------------------------------
 /* DISCORD CLIENT SETUP (Unchanged)
-*/
+ */
 // -----------------------------------------------------------------------------
 
 const client = new Client({
@@ -67,7 +67,7 @@ let botRunning = true;
 
 // -----------------------------------------------------------------------------
 /* MONGODB CONNECTION (Unchanged)
-*/
+ */
 // -----------------------------------------------------------------------------
 
 const connectToDatabase = async () => {
@@ -86,7 +86,7 @@ connectToDatabase();
 
 // -----------------------------------------------------------------------------
 /* UTILITY: Compute Image Hash (Unchanged)
-*/
+ */
 // -----------------------------------------------------------------------------
 
 const computeImageHash = async (url) => {
@@ -115,7 +115,7 @@ const computeImageHash = async (url) => {
 
 // -----------------------------------------------------------------------------
 /* DISCORD: Client Event Handlers (Modified)
-*/
+ */
 // -----------------------------------------------------------------------------
 
 // 1) On Client Ready (Unchanged)
@@ -133,10 +133,14 @@ client.on("messageCreate", async (message) => {
 
     if (message.author.bot) return;
 
-    const guildConfig = await GuildConfig.findOne({ guildId: message.guild.id });
+    const guildConfig = await GuildConfig.findOne({
+      guildId: message.guild.id,
+    });
 
     if (!guildConfig) {
-      console.log(`⚠️ Guild configuration not found for guild ID: ${message.guild.id}`);
+      console.log(
+        `⚠️ Guild configuration not found for guild ID: ${message.guild.id}`
+      );
       return;
     }
 
@@ -194,7 +198,9 @@ client.on("messageCreate", async (message) => {
       if (
         !message.member.permissions.has(PermissionsBitField.Flags.Administrator)
       ) {
-        await message.reply("❌ You do not have permission to run this command.");
+        await message.reply(
+          "❌ You do not have permission to run this command."
+        );
         return;
       }
 
@@ -269,7 +275,8 @@ client.on("messageCreate", async (message) => {
         // Determine if it was newly inserted or updated
         const wasInserted =
           existingImage.createdAt &&
-          existingImage.createdAt.getTime() === existingImage.updatedAt.getTime();
+          existingImage.createdAt.getTime() ===
+            existingImage.updatedAt.getTime();
 
         if (wasInserted) {
           // New image
@@ -321,7 +328,9 @@ client.on("messageCreate", async (message) => {
           // 5) Notify user via DM
           try {
             await message.author.send(
-              `<@${message.author.id}>  Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉 `
+              `\`\`\`
+                Your image was **removed** because it was identified as a **duplicate** based on its content or name. Please resubmit a new "**Original Image**" to receive "**CODE CERTIFIED**" to participate in **giveaways** 🎉
+              \`\`\``
             );
             console.log(
               `📩 Sent DM to ${message.author.tag} about duplicate image.`
@@ -337,7 +346,9 @@ client.on("messageCreate", async (message) => {
             );
             if (botCommandChannel) {
               await botCommandChannel.send(
-                `<@${message.author.id}>  Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉 `
+                `\`\`\`
+                  Your image was **removed** because it was identified as a **duplicate** based on its content or name. Please resubmit a new "**Original Image**" to receive "**CODE CERTIFIED**" to participate in **giveaways** 🎉
+                \`\`\``
               );
               console.log("📢 Sent notification to bot command channel.");
             }
@@ -385,7 +396,10 @@ client.on("messageCreate", async (message) => {
                   `✅ Removed 'CODE CERTIFIED' role from ${message.author.tag}.`
                 );
               } catch (error) {
-                console.error("🔴 Failed to remove 'CODE CERTIFIED' role:", error);
+                console.error(
+                  "🔴 Failed to remove 'CODE CERTIFIED' role:",
+                  error
+                );
               }
             } else {
               console.log(
@@ -407,7 +421,9 @@ client.on("messageCreate", async (message) => {
             // DM the user
             try {
               await message.author.send(
-                `<@${message.author.id}> Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉 `
+                `\`\`\`
+                  Your image was **removed** because it was identified as a **duplicate** based on its content or name. Please resubmit a new "**Original Image**" to receive "**CODE CERTIFIED**" to participate in **giveaways** 🎉
+                \`\`\``
               );
               console.log(
                 `📩 Sent DM to ${message.author.tag} about duplicate image.`
@@ -423,7 +439,9 @@ client.on("messageCreate", async (message) => {
               );
               if (botCommandChannel) {
                 await botCommandChannel.send(
-                  `<@${message.author.id}> Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in giveaways 🎉 `
+                  `\`\`\`
+                    Your image was **removed** because it was identified as a **duplicate** based on its content or name. Please resubmit a new "**Original Image**" to receive "**CODE CERTIFIED**" to participate in **giveaways** 🎉
+                  \`\`\``
                 );
                 console.log("📢 Sent notification to bot command channel.");
               }
@@ -470,7 +488,7 @@ client.on("messageDelete", async (message) => {
 
 // -----------------------------------------------------------------------------
 /* GRACEFUL SHUTDOWN (Unchanged)
-*/
+ */
 // -----------------------------------------------------------------------------
 
 process.on("SIGINT", async () => {
@@ -482,7 +500,7 @@ process.on("SIGINT", async () => {
 
 // -----------------------------------------------------------------------------
 /* LOGIN (Unchanged)
-*/
+ */
 // -----------------------------------------------------------------------------
 
 client.login(process.env.DISCORD_TOKEN);
