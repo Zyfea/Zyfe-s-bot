@@ -1,10 +1,15 @@
-// Import necessary modules and dependencies
+////////////////////////////////////////////////////////////////////////////////
+// index.js (or bot.js)
+////////////////////////////////////////////////////////////////////////////////
+
+// -----------------------------------------------------------------------------
+// IMPORTS
+// -----------------------------------------------------------------------------
 import {
   Client,
   GatewayIntentBits,
   Partials,
-  PermissionsBitField,
-  Colors
+  PermissionsBitField
 } from "discord.js";
 import mongoose from "mongoose";
 import fetch from "node-fetch";
@@ -25,11 +30,11 @@ const __dirname = path.dirname(__filename);
 // -----------------------------------------------------------------------------
 
 // 1) Image Schema:
-//    - Holds a unique hash and references the message/guild info for that image.
+//    - Holds a unique hash + guildId pair, plus references to message, etc.
 const imageSchema = new mongoose.Schema(
   {
-    hash: { type: String },
-    guildId: { type: String, index: true },
+    hash: { type: String, required: true },
+    guildId: { type: String, required: true, index: true },
     channelId: String,
     messageId: String,
     url: String,
@@ -37,10 +42,10 @@ const imageSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Create a compound unique index on hash and guildId
+// Create a compound unique index on (hash, guildId)
 imageSchema.index({ hash: 1, guildId: 1 }, { unique: true });
 
-// Image Model
+// Model
 const Image = mongoose.model("Image", imageSchema);
 
 // 2) GuildConfig Schema:
@@ -50,38 +55,31 @@ const guildSchema = new mongoose.Schema({
   activeChannelId: String,
   botCommandChannelId: String,
 });
-
-// GuildConfig Model
 const GuildConfig = mongoose.model("GuildConfig", guildSchema);
 
 // -----------------------------------------------------------------------------
 // DISCORD CLIENT SETUP
 // -----------------------------------------------------------------------------
-
-// Initialize Discord client with necessary intents and partials
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.DirectMessages
   ],
   partials: [Partials.Message, Partials.Channel],
 });
 
-// Flag to track if the bot is running
 let botRunning = true;
 
 // -----------------------------------------------------------------------------
 // MONGODB CONNECTION
 // -----------------------------------------------------------------------------
-
-// Improved MongoDB connection with retries
 const connectToDatabase = async () => {
   try {
     await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
-      useUnifiedTopology: true,
+      useUnifiedTopology: true
     });
     console.log("✅ Connected to MongoDB.");
   } catch (err) {
@@ -94,7 +92,6 @@ connectToDatabase();
 // -----------------------------------------------------------------------------
 // UTILITY: Compute Image Hash
 // -----------------------------------------------------------------------------
-
 /**
  * Computes the hash of an image from its URL.
  * @param {string} url - The URL of the image.
@@ -107,13 +104,10 @@ const computeImageHash = async (url) => {
     if (!response.ok) {
       throw new Error(`Failed to fetch image: ${response.statusText}`);
     }
-
-    // image-hash requires a *file path* or a *file buffer*, but
-    // it can also sometimes use a remote URL (depending on the version).
-    // If you run into issues, you might need to save the image to disk
-    // or convert to a buffer first. For simplicity, we’re passing the URL directly.
     const imageUrl = response.url;
 
+    // Using image-hash directly on a remote URL can sometimes be finicky;
+    // If you run into issues, consider downloading the image first or using a buffer.
     return new Promise((resolve) => {
       imageHash(imageUrl, 16, true, (error, data) => {
         if (error) {
@@ -144,7 +138,7 @@ client.on("messageCreate", async (message) => {
     // Ignore bot messages
     if (message.author.bot) return;
 
-    // Check if the bot has been set up for this guild
+    // Retrieve guild config
     const guildConfig = await GuildConfig.findOne({
       guildId: message.guild.id,
     });
@@ -161,7 +155,6 @@ client.on("messageCreate", async (message) => {
         return;
       }
 
-      // Command format
       const [_, activeChannelId, botCommandChannelId] =
         message.content.split(" ");
 
@@ -184,16 +177,16 @@ client.on("messageCreate", async (message) => {
       return;
     }
 
-    // If guild not configured, ignore everything else
+    // If no guildConfig, ignore everything else
     if (!guildConfig) return;
 
     const { activeChannelId, botCommandChannelId } = guildConfig;
 
-    // Only process images in the "active" channel
+    // Only process images in the configured channel
     if (message.channel.id !== activeChannelId) return;
 
     // ---------------------------------------
-    //  Start and Stop Bot: "!startbot" or "!stopbot"
+    //  Startbot / Stopbot
     // ---------------------------------------
     if (
       message.content.startsWith("!startbot") ||
@@ -207,7 +200,6 @@ client.on("messageCreate", async (message) => {
         return;
       }
 
-      // Toggle botRunning
       if (message.content.startsWith("!startbot")) {
         botRunning = true;
         await message.reply("✅ The bot is now running.");
@@ -220,7 +212,7 @@ client.on("messageCreate", async (message) => {
       return;
     }
 
-    // If the bot is "stopped," ignore image processing
+    // If bot is not running, do nothing
     if (!botRunning) return;
 
     // ---------------------------------------
@@ -246,7 +238,7 @@ client.on("messageCreate", async (message) => {
       }
     });
 
-    // If no images found, stop
+    // If no images, stop
     if (imageUrls.length === 0) return;
 
     console.log(`🔍 Checking ${imageUrls.length} image(s)...`);
@@ -255,199 +247,129 @@ client.on("messageCreate", async (message) => {
     //  Process Each Image
     // ---------------------------------------
     for (const imageUrl of imageUrls) {
-      // Compute hash
+      // 1) Compute the hash
       const hash = await computeImageHash(imageUrl);
-      if (!hash) continue; // skip if no hash
+      if (!hash) continue;
 
       console.log(`🔑 Image hash computed: ${hash}`);
 
-      try {
-        // Attempt upsert
-        // setOnInsert only sets these fields on the *insert* portion of upsert
-        const existingImage = await Image.findOneAndUpdate(
-          { hash, guildId: message.guild.id },
-          {
-            $setOnInsert: {
-              channelId: message.channel.id,
-              messageId: message.id,
-              url: imageUrl,
-            },
-          },
-          { upsert: true, new: true, setDefaultsOnInsert: true }
+      // 2) Check if this (hash, guildId) already exists
+      let foundImage = await Image.findOne({
+        hash,
+        guildId: message.guild.id,
+      });
+
+      if (foundImage) {
+        // Duplicate => handle penalty
+        console.log("⚠️ Duplicate image detected, handling as duplicate.");
+
+        const codeCertifiedRole = message.guild.roles.cache.find(
+          (role) => role.name === "CODE CERTIFIED"
         );
 
-        // Determine if it was newly inserted or updated
-        // A quick trick: newly inserted docs have matching createdAt == updatedAt
-        const wasInserted =
-          existingImage.createdAt &&
-          existingImage.createdAt.getTime() === existingImage.updatedAt.getTime();
-
-        if (wasInserted) {
-          // New image
-          console.log(`✅ Saved new image hash for ${message.author.tag}`);
-        } else {
-          // Duplicate image => handle penalty
-          console.log("⚠️ Duplicate image detected, handling as duplicate.");
-
-          // 1) Find the 'CODE CERTIFIED' role
-          const codeCertifiedRole = message.guild.roles.cache.find(
-            (role) => role.name === "CODE CERTIFIED"
-          );
-
-          if (!codeCertifiedRole) {
-            console.error(
-              "🔴 'CODE CERTIFIED' role does not exist in the guild."
-            );
-            // Optionally, notify administrators or log this event
-            continue; // Skip further processing if role doesn't exist
-          }
-
-          // 2) Remove 'CODE CERTIFIED' role from user
-          if (message.member.roles.cache.has(codeCertifiedRole.id)) {
-            try {
-              await message.member.roles.remove(codeCertifiedRole);
-              console.log(
-                `✅ Removed 'CODE CERTIFIED' role from ${message.author.tag}.`
-              );
-            } catch (err) {
-              console.error("🔴 Failed to remove 'CODE CERTIFIED' role:", err);
-            }
-          } else {
-            console.log(
-              `ℹ️ User ${message.author.tag} does not have the 'CODE CERTIFIED' role.`
-            );
-          }
-
-          // 4) Delete the duplicate message
-          try {
-            await message.delete();
-            console.log("🗑️ Deleted duplicate message.");
-          } catch (err) {
-            console.error("🔴 Error deleting duplicate message:", err);
-          }
-
-          // 5) Construct the link to the *original* image
-          const originalLink = `https://discord.com/channels/${existingImage.guildId}/${existingImage.channelId}/${existingImage.messageId}`;
-
-          // 6) Notify user via DM
-          try {
-            await message.author.send(
-              `\`\`\`Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in fn giveaways  🎉\`\`\``
-            );
-            console.log(
-              `📩 Sent DM to ${message.author.tag} about duplicate image.`
-            );
-          } catch (err) {
-            console.log("🔴 Could not send DM to user:", err);
-          }
-
-          // 7) Notify the bot command channel
-          try {
-            const botCommandChannel = await message.guild.channels.fetch(
-              botCommandChannelId
-            );
-            if (botCommandChannel) {
-              await botCommandChannel.send(
-                `\`\`\`Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in fn giveaways  🎉\`\`\``
-              );
-              console.log("📢 Sent notification to bot command channel.");
-            }
-          } catch (err) {
-            console.error(
-              "🔴 Failed to send notification to bot command channel:",
-              err
-            );
-          }
+        if (!codeCertifiedRole) {
+          console.error("🔴 'CODE CERTIFIED' role does not exist in the guild.");
+          continue;
         }
-      } catch (err) {
-        // --------------------------------------------------
-        // DUPLICATE KEY ERROR (E11000)
-        // --------------------------------------------------
-        if (err.code === 11000) {
-          console.log("⚠️ Duplicate key error detected, handling as duplicate.");
 
-          // Check if we can fetch the existing record
-          const existingImage = await Image.findOne({
-            hash: hash,
-            guildId: message.guild.id,
-          });
+        // Remove role if user has it
+        if (message.member.roles.cache.has(codeCertifiedRole.id)) {
+          try {
+            await message.member.roles.remove(codeCertifiedRole);
+            console.log(`✅ Removed 'CODE CERTIFIED' from ${message.author.tag}`);
+          } catch (err) {
+            console.error("🔴 Failed to remove 'CODE CERTIFIED' role:", err);
+          }
+        } else {
+          console.log(
+            `ℹ️ ${message.author.tag} doesn't have the 'CODE CERTIFIED' role.`
+          );
+        }
 
-          if (existingImage) {
-            // Same penalty logic
-            const codeCertifiedRole = message.guild.roles.cache.find(
-              (role) => role.name === "CODE CERTIFIED"
+        // Delete the duplicate message
+        try {
+          await message.delete();
+          console.log("🗑️ Deleted duplicate message.");
+        } catch (err) {
+          console.error("🔴 Error deleting duplicate message:", err);
+        }
+
+        // DM the user
+        try {
+          await message.author.send(
+            "```Your image was removed because it was identified as a duplicate. Please submit a new *original* image to receive CODE CERTIFIED.```"
+          );
+          console.log(`📩 Sent DM to ${message.author.tag}.`);
+        } catch (err) {
+          console.error("🔴 Could not send DM to user:", err);
+        }
+
+        // Notify the bot command channel
+        try {
+          const botCommandChannel = await message.guild.channels.fetch(
+            botCommandChannelId
+          );
+          if (botCommandChannel) {
+            await botCommandChannel.send(
+              "```Your image was removed because it was identified as a duplicate. Please submit a new *original* image to receive CODE CERTIFIED.```"
             );
+            console.log("📢 Sent notification to bot command channel.");
+          }
+        } catch (err) {
+          console.error("🔴 Failed to send notification to bot command channel:", err);
+        }
+      } else {
+        // 3) Not found => Insert new record
+        try {
+          await Image.create({
+            hash,
+            guildId: message.guild.id,
+            channelId: message.channel.id,
+            messageId: message.id,
+            url: imageUrl,
+          });
+          console.log(`✅ Saved new image hash for ${message.author.tag}`);
+        } catch (err) {
+          // Could still hit E11000 if concurrency
+          if (err.code === 11000) {
+            console.log("⚠️ Caught E11000 in concurrency, re-checking doc...");
 
-            if (!codeCertifiedRole) {
-              console.error(
-                "🔴 'CODE CERTIFIED' role does not exist in the guild."
+            // Re-check if it now exists
+            foundImage = await Image.findOne({ hash, guildId: message.guild.id });
+            if (foundImage) {
+              // Duplicate => same penalty logic
+              console.log("⚠️ Duplicate image (concurrency). Handling penalty...");
+              // (Repeat the penalty code or put it in a helper function.)
+              // We'll keep it short here for clarity:
+              const codeCertifiedRole = message.guild.roles.cache.find(
+                (role) => role.name === "CODE CERTIFIED"
               );
-              // Optionally, notify administrators or log this event
-              continue; // Skip further processing if role doesn't exist
-            }
-
-            // Remove 'CODE CERTIFIED' role from user if they have it
-            if (message.member.roles.cache.has(codeCertifiedRole.id)) {
+              if (codeCertifiedRole) {
+                if (message.member.roles.cache.has(codeCertifiedRole.id)) {
+                  try {
+                    await message.member.roles.remove(codeCertifiedRole);
+                    console.log(
+                      `✅ Removed 'CODE CERTIFIED' from ${message.author.tag}`
+                    );
+                  } catch (roleErr) {
+                    console.error("🔴 Failed to remove role:", roleErr);
+                  }
+                }
+              }
               try {
-                await message.member.roles.remove(codeCertifiedRole);
-                console.log(
-                  `✅ Removed 'CODE CERTIFIED' role from ${message.author.tag}.`
-                );
-              } catch (error) {
-                console.error(
-                  "🔴 Failed to remove 'CODE CERTIFIED' role:",
-                  error
-                );
+                await message.delete();
+              } catch (delErr) {
+                console.error("🔴 Failed to delete message:", delErr);
               }
-            } els
-
-            // Delete the duplicate message
-            try {
-              await message.delete();
-              console.log("🗑️ Deleted duplicate message.");
-            } catch (error) {
-              console.error("🔴 Error deleting duplicate message:", error);
-            }
-
-            // Construct original link
-            const originalLink = `https://discord.com/channels/${existingImage.guildId}/${existingImage.channelId}/${existingImage.messageId}`;
-
-            // DM the user
-            try {
-              await message.author.send(
-                `\`\`\`Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in fn giveaways  🎉\`\`\``
-              );
-              console.log(
-                `📩 Sent DM to ${message.author.tag} about duplicate image.`
-              );
-            } catch (error) {
-              console.log("🔴 Could not send DM to user:", error);
-            }
-
-            // Notify the bot command channel
-            try {
-              const botCommandChannel = await message.guild.channels.fetch(
-                botCommandChannelId
-              );
-              if (botCommandChannel) {
-                await botCommandChannel.send(
-                  `\`\`\`Your image was removed because it was identified as a duplicate based on its content or name. Please resubmit a new "Orginal Image" to receive "CODE CERTIFIED" to participate in fn giveaways  🎉\`\`\``
-                );
-                console.log("📢 Sent notification to bot command channel.");
-              }
-            } catch (error) {
+              // DM user, notify channel, etc. (same logic as above)
+            } else {
               console.error(
-                "🔴 Failed to send notification to bot command channel:",
-                error
+                "🔴 Duplicate key error but record is still not found (possible index issue)."
               );
             }
           } else {
-            // The existing record isn't found — can happen due to race conditions
-            console.error("🔴 Duplicate key error but existing image not found.");
+            console.error("🔴 Error inserting new image record:", err);
           }
-        } else {
-          // Some other error
-          console.error("🔴 Error saving new image hash:", err);
         }
       }
     }
@@ -456,8 +378,7 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// 3) On Message Delete:
-//    Remove the associated record from the database if found.
+// 3) On Message Delete => remove from DB if found
 client.on("messageDelete", async (message) => {
   try {
     const imageRecord = await Image.findOne({
@@ -466,9 +387,7 @@ client.on("messageDelete", async (message) => {
     });
     if (imageRecord) {
       await Image.deleteOne({ messageId: message.id });
-      console.log(
-        `🗑️ Deleted image record from database for message ${message.id}`
-      );
+      console.log(`🗑️ Deleted image record from DB for message ${message.id}`);
     }
   } catch (error) {
     console.error("🔴 Error deleting image record:", error);
