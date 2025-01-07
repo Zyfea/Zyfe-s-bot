@@ -126,23 +126,11 @@ client.once("ready", () => {
 // 2) On Message Create (Modified)
 client.on("messageCreate", async (message) => {
   try {
-    if (!message.guild) {
-      console.log(`📬 Received a DM from ${message.author.tag}, ignoring.`);
-      return;
-    }
-
     if (message.author.bot) return;
 
     const guildConfig = await GuildConfig.findOne({
       guildId: message.guild.id,
     });
-
-    if (!guildConfig) {
-      console.log(
-        `⚠️ Guild configuration not found for guild ID: ${message.guild.id}`
-      );
-      return;
-    }
 
     // ---------------------------------------
     //  Setup Command: "!setup <activeChannelId> <botCommandChannelId>"
